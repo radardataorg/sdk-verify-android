@@ -7,7 +7,7 @@ plugins {
 
 val versaoDoSdk = "0.1.0"
 
-group = "com.github.radardata"
+group = "com.github.radardataorg"
 version = versaoDoSdk
 
 android {
@@ -62,8 +62,8 @@ afterEvaluate {
         publications {
             create<MavenPublication>("release") {
                 from(components["release"])
-                groupId = "com.github.radardata"
-                artifactId = "verify-android"
+                groupId = "com.github.radardataorg"
+                artifactId = "sdk-verify-android"
                 version = versaoDoSdk
             }
         }

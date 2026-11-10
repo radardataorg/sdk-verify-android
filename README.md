@@ -22,7 +22,7 @@ No `build.gradle.kts` do app:
 
 ```kotlin
 dependencies {
-    implementation("com.github.radardata:sdk-verify-android:0.1.0")
+    implementation("com.github.radardataorg:sdk-verify-android:v0.1.0")
 }
 ```
 
