@@ -29,8 +29,33 @@ class NucleoTest {
     fun `token sai da url ou vem sozinho`() {
         assertEquals("abc123", Runtime.tokenDaUrl("https://verify.radardata.com.br/s/abc123?x=1#y"))
         assertEquals("abc123", Runtime.tokenDaUrl("  abc123 "))
-        assertEquals("https://verify.cliente.com/s/abc", Runtime.urlDaSessao("https://verify.cliente.com/s/abc"))
+        assertEquals("https://verify.radardata.com.br/s/abc", Runtime.urlDaSessao("https://verify.radardata.com.br/s/abc"))
+        assertEquals("https://verify.cliente.com/s/abc", Runtime.urlDaSessao("https://verify.cliente.com/s/abc", setOf("verify.cliente.com")))
         assertEquals("https://verify.radardata.com.br/s/abc", Runtime.urlDaSessao("abc"))
+    }
+
+    /** Seguranca: url de deep link de outro site, http ou content:// nao abre replica do Verify no app. */
+    @Test
+    fun `url fora do Verify e recusada`() {
+        for (url in listOf("http://verify.radardata.com.br/s/abc", "content://app.provider/s/abc", "https://falso.exemplo/s/abc", "https://verify.radardata.com.br/outra/abc", "https://verify.radardata.com.br.falso.exemplo/s/abc")) {
+            val erro = runCatching { Runtime.urlDaSessao(url) }.exceptionOrNull() as? ErroVerify
+            assertEquals(url, "url_invalida", erro?.codigo)
+        }
+    }
+
+    /** Seguranca: camera e localizacao so para a pagina da sessao. */
+    @Test
+    fun `permissao so para a origem da sessao`() {
+        val sessao = NavegadorDoVerify.origemDe("https://verify.radardata.com.br/s/abc")
+        assertTrue(NavegadorDoVerify.podeConceder(sessao, NavegadorDoVerify.origemDe("https://verify.radardata.com.br/")))
+        assertFalse(NavegadorDoVerify.podeConceder(sessao, NavegadorDoVerify.origemDe("https://terceiro.exemplo/")))
+        assertFalse(NavegadorDoVerify.podeConceder(sessao, NavegadorDoVerify.origemDe("https://verify.radardata.com.br:8443/")))
+        assertFalse(NavegadorDoVerify.podeConceder(null, sessao))
+    }
+
+    @Test
+    fun `base fora de https e recusada`() {
+        assertEquals("base_invalida", (runCatching { Runtime("t", "http://api.exemplo/api") }.exceptionOrNull() as ErroVerify).codigo)
     }
 
     @Test
@@ -101,7 +126,7 @@ class NucleoTest {
     @Test
     fun `controle abre o WebView e acompanha ate concluir`() = runTest {
         val f = Falso(listOf(estado("in_progress"), estado("in_progress"), estado("completed", null, "APROVADO")))
-        val controle = ControleDaSessao("https://verify.cliente.com/s/abc", "https://api.exemplo/api", SemProvedorNativo, 2_000, f)
+        val controle = ControleDaSessao("https://verify.cliente.com/s/abc", "https://api.exemplo/api", SemProvedorNativo, 2_000, setOf("verify.cliente.com"), f)
         val estados = mutableListOf<String>()
 
         val abertura = controle.abrir { estados += it.status }
@@ -115,10 +140,10 @@ class NucleoTest {
 
     @Test
     fun `sessao ja encerrada nem abre o WebView, e sessao vazia vira erro`() = runTest {
-        val pronta = ControleDaSessao("abc", null, SemProvedorNativo, 5_000, Falso(listOf(estado("completed", null, "REPROVADO"))))
+        val pronta = ControleDaSessao("abc", null, SemProvedorNativo, 5_000, transporte = Falso(listOf(estado("completed", null, "REPROVADO"))))
         assertTrue((pronta.abrir {} as ControleDaSessao.Abertura.Fim).desfecho is Desfecho.Concluido)
 
-        val vazia = ControleDaSessao("  ", null, SemProvedorNativo, 5_000, Falso(listOf(estado("in_progress"))))
+        val vazia = ControleDaSessao("  ", null, SemProvedorNativo, 5_000, transporte = Falso(listOf(estado("in_progress"))))
         assertTrue((vazia.abrir {} as ControleDaSessao.Abertura.Fim).desfecho is Desfecho.Erro)
     }
 }

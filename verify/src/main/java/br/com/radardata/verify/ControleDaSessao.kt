@@ -15,6 +15,7 @@ internal class ControleDaSessao(
     base: String?,
     provedor: ProvedorDeProvaDeVida,
     intervaloMs: Long,
+    private val dominiosPermitidos: Set<String> = setOf(Runtime.DOMINIO_PADRAO),
     transporte: Transporte = TransportePadrao,
 ) {
     /** Cada conferencia e um acesso na auditoria da sessao e conta no limite de taxa do runtime. */
@@ -32,6 +33,12 @@ internal class ControleDaSessao(
 
     suspend fun abrir(aoEstado: (EstadoSessao) -> Unit): Abertura {
         val o = orquestrador.getOrElse { return Abertura.Fim(Orquestrador.desfechoDoErro(it)) }
+        // Antes de qualquer chamada: url de outro site nao chega nem a consultar a api.
+        val url = try {
+            Runtime.urlDaSessao(sessao, dominiosPermitidos)
+        } catch (e: ErroVerify) {
+            return Abertura.Fim(Desfecho.Erro(e))
+        }
         return try {
             val estado = o.estado()
             aoEstado(estado)
@@ -44,7 +51,7 @@ internal class ControleDaSessao(
             }
 
             // Sobrou passo que este pacote nao roda nativo: WebView.
-            Abertura.WebView(Runtime.urlDaSessao(sessao))
+            Abertura.WebView(url)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Throwable) {

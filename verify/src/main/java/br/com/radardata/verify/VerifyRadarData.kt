@@ -32,6 +32,8 @@ import androidx.compose.ui.viewinterop.AndroidView
  * @param base base da api, para apontar a um ambiente seu
  * @param provedorDeProvaDeVida prova de vida nativa; sem ela, o fluxo todo roda no WebView
  * @param intervaloDeConferenciaMs de quanto em quanto tempo perguntar ao servidor, minimo 2000
+ * @param dominiosPermitidos dominio proprio do seu Verify, se tiver; `verify.radardata.com.br` vale sempre
+ * @param protegerTela bloqueia print e gravacao de tela enquanto o Verify esta aberto
  */
 @Composable
 fun VerifyRadarData(
@@ -42,6 +44,8 @@ fun VerifyRadarData(
     base: String? = null,
     provedorDeProvaDeVida: ProvedorDeProvaDeVida = SemProvedorNativo,
     intervaloDeConferenciaMs: Long = ControleDaSessao.INTERVALO_PADRAO_MS,
+    dominiosPermitidos: Set<String> = emptySet(),
+    protegerTela: Boolean = true,
 ) {
     val contexto = LocalContext.current
     val escopo = rememberCoroutineScope()
@@ -68,11 +72,20 @@ fun VerifyRadarData(
     }
 
     var url by remember(sessao, base) { mutableStateOf<String?>(null) }
-    val controle = remember(sessao, base, intervaloDeConferenciaMs) {
+    val controle = remember(sessao, base, intervaloDeConferenciaMs, dominiosPermitidos) {
         ControleDaSessao(sessao, base, object : ProvedorDeProvaDeVida {
             override suspend fun disponivel() = provedor.disponivel()
             override suspend fun executar(desafio: Map<String, Any?>) = provedor.executar(desafio)
-        }, intervaloDeConferenciaMs)
+        }, intervaloDeConferenciaMs, dominiosPermitidos + Runtime.DOMINIO_PADRAO)
+    }
+
+    // A tela mostra documento e rosto: sem print nem gravacao enquanto o Verify esta aberto.
+    if (protegerTela) {
+        DisposableEffect(contexto) {
+            val janela = (contexto as? android.app.Activity)?.window
+            janela?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            onDispose { janela?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+        }
     }
 
     LaunchedEffect(controle) {
@@ -97,7 +110,7 @@ fun VerifyRadarData(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).also { w ->
-                        NavegadorDoVerify.configurar(w, escopo, pedidos) { encerrar(Desfecho.Erro(it)) }
+                        NavegadorDoVerify.configurar(w, atual, escopo, pedidos) { encerrar(Desfecho.Erro(it)) }
                         w.loadUrl(atual)
                         criado = w
                     }

@@ -81,6 +81,19 @@ fun ProvaDeVida(url: String, aoTerminar: (Desfecho) -> Unit) {
 }
 ```
 
+## Segurança da tela
+
+- **Só abre url do Verify.** A url precisa ser https, no formato `/s/<token>`, em
+  `verify.radardata.com.br` ou num domínio que você informar. Qualquer outra vira
+  `Desfecho.Erro` com código `url_invalida`, sem chamar a api. Se o seu app recebe a url por
+  deep link, não repasse sem conferir: é assim que uma réplica do Verify entraria no seu app.
+- **Domínio próprio:** `SessaoDoVerify(url, dominiosPermitidos = setOf("verify.suaempresa.com.br"))`,
+  ou o mesmo parâmetro no `VerifyRadarData`.
+- **Câmera e localização só para a página do fluxo.** Link para outro site abre no navegador,
+  fora do app, onde a pessoa vê o endereço.
+- **Sem print nem gravação de tela** enquanto o Verify está aberto, porque a tela mostra
+  documento e rosto. Para desligar: `protegerTela = false`.
+
 ## Quem decide a aprovação
 
 **O seu backend, pelo webhook** (`session.completed`), nunca o app. O desfecho que chega ao

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
+import android.view.WindowManager
 import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.ProgressBar
@@ -28,6 +29,10 @@ data class SessaoDoVerify(
     val base: String? = null,
     /** De quanto em quanto tempo perguntar ao servidor se acabou, em ms. Padrao 5000, minimo 2000. */
     val intervaloDeConferenciaMs: Long = ControleDaSessao.INTERVALO_PADRAO_MS,
+    /** Dominio proprio do seu Verify, se tiver. `verify.radardata.com.br` vale sempre. */
+    val dominiosPermitidos: Set<String> = emptySet(),
+    /** Bloqueia print, gravacao de tela e a miniatura de recentes: a tela mostra documento e rosto. */
+    val protegerTela: Boolean = true,
 )
 
 /**
@@ -47,6 +52,8 @@ class ContratoVerify : ActivityResultContract<SessaoDoVerify, Desfecho>() {
             .putExtra(EXTRA_SESSAO, input.sessao)
             .putExtra(EXTRA_BASE, input.base)
             .putExtra(EXTRA_INTERVALO, input.intervaloDeConferenciaMs)
+            .putExtra(EXTRA_DOMINIOS, input.dominiosPermitidos.toTypedArray())
+            .putExtra(EXTRA_PROTEGER, input.protegerTela)
 
     override fun parseResult(resultCode: Int, intent: Intent?): Desfecho {
         val dados = intent?.extras
@@ -78,6 +85,8 @@ class ContratoVerify : ActivityResultContract<SessaoDoVerify, Desfecho>() {
         const val EXTRA_SESSAO = "radardata.verify.sessao"
         const val EXTRA_BASE = "radardata.verify.base"
         const val EXTRA_INTERVALO = "radardata.verify.intervalo"
+        const val EXTRA_DOMINIOS = "radardata.verify.dominios"
+        const val EXTRA_PROTEGER = "radardata.verify.proteger"
         const val R_TIPO = "radardata.verify.tipo"
         const val R_SESSAO = "radardata.verify.session_id"
         const val R_STATUS = "radardata.verify.status"
@@ -124,6 +133,9 @@ class VerifyActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (intent.getBooleanExtra(ContratoVerify.EXTRA_PROTEGER, true)) {
+            window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         pedidos = PedidosComLaunchers(this).also {
             it.lancarPermissao = { p -> pedirPermissao.launch(p) }
@@ -147,6 +159,7 @@ class VerifyActivity : ComponentActivity() {
             base = intent.getStringExtra(ContratoVerify.EXTRA_BASE),
             provedor = SemProvedorNativo,
             intervaloMs = intent.getLongExtra(ContratoVerify.EXTRA_INTERVALO, ControleDaSessao.INTERVALO_PADRAO_MS),
+            dominiosPermitidos = intent.getStringArrayExtra(ContratoVerify.EXTRA_DOMINIOS).orEmpty().toSet() + Runtime.DOMINIO_PADRAO,
         )
 
         lifecycleScope.launch {
@@ -154,7 +167,7 @@ class VerifyActivity : ComponentActivity() {
                 is ControleDaSessao.Abertura.Fim -> encerrar(abertura.desfecho)
                 is ControleDaSessao.Abertura.WebView -> {
                     val w = WebView(this@VerifyActivity)
-                    NavegadorDoVerify.configurar(w, lifecycleScope, pedidos) { encerrar(Desfecho.Erro(it)) }
+                    NavegadorDoVerify.configurar(w, abertura.url, lifecycleScope, pedidos) { encerrar(Desfecho.Erro(it)) }
                     raiz.removeAllViews()
                     raiz.addView(w, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
                     webView = w
