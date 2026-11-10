@@ -1,0 +1,59 @@
+# ============================================================================
+# CI/CD do RadarData Verify para Android. Publica pelo JitPack, a partir do
+# espelho no GitHub, por TAG (vX.Y.Z): o JitPack builda a tag do GitHub na
+# primeira vez que alguem pede aquela versao.
+#
+# Variaveis (Settings > CI/CD > Variables, masked + protected):
+#   GITHUB_DEPLOY_KEY_B64  chave privada da deploy key do repo no GitHub, em base64
+#   GITHUB_REPO            owner/repo no GitHub
+# ============================================================================
+stages: [test, espelhar]
+
+teste:
+  stage: test
+  image: eclipse-temurin:17-jdk
+  variables:
+    ANDROID_HOME: /opt/android
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq unzip wget >/dev/null
+    - wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/ferramentas.zip
+    - mkdir -p $ANDROID_HOME/cmdline-tools && unzip -q /tmp/ferramentas.zip -d $ANDROID_HOME/cmdline-tools && mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+    - yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
+    - $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" >/dev/null
+  script:
+    # A versao do Gradle tem de concordar com a tag: o JitPack publica o que o build diz.
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        noArquivo=$(grep -oP 'val versaoDoSdk = "\K[^"]+' verify/build.gradle.kts)
+        [ "${CI_COMMIT_TAG#v}" = "$noArquivo" ] || { echo "ERRO: a tag diz ${CI_COMMIT_TAG#v} e o build diz $noArquivo."; exit 1; }
+      fi
+    - ./gradlew :verify:testDebugUnitTest :verify:assembleRelease :verify:publishToMavenLocal :exemplo:assembleDebug --console=plain
+  rules:
+    - if: '$CI_COMMIT_TAG'
+    - if: '$CI_COMMIT_BRANCH'
+
+# O GitLab e privado; o GitHub e a vitrine publica e e de la que o JitPack builda.
+# Deploy key e nao PAT: escrita em UM repositorio so, sem validade, sem alcance no
+# resto da conta. Empurra `main` e a tag, e nada mais.
+espelhar-no-github:
+  stage: espelhar
+  image: alpine:3.20
+  variables:
+    GIT_DEPTH: 0
+  before_script:
+    - apk add --no-cache git openssh-client >/dev/null
+  script:
+    - |
+      test -n "$GITHUB_DEPLOY_KEY_B64" || { echo "ERRO: GITHUB_DEPLOY_KEY_B64 nao configurado."; exit 1; }
+      test -n "$GITHUB_REPO" || { echo "ERRO: GITHUB_REPO nao configurado (owner/repo)."; exit 1; }
+    - |
+      mkdir -p ~/.ssh && chmod 700 ~/.ssh
+      echo "$GITHUB_DEPLOY_KEY_B64" | base64 -d > ~/.ssh/id_ed25519
+      chmod 600 ~/.ssh/id_ed25519
+      ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+    - git fetch origin main --quiet
+    - git push "git@github.com:${GITHUB_REPO}.git" "origin/main:refs/heads/main"
+    - git push "git@github.com:${GITHUB_REPO}.git" "refs/tags/${CI_COMMIT_TAG}"
+    - echo "Espelhado em https://github.com/${GITHUB_REPO} na tag ${CI_COMMIT_TAG}; o JitPack builda no primeiro pedido."
+  rules:
+    - if: '$CI_COMMIT_TAG'

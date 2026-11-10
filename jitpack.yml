@@ -1,0 +1,5 @@
+# JitPack: so a biblioteca, sem o app de exemplo.
+jdk:
+  - openjdk17
+install:
+  - ./gradlew :verify:publishToMavenLocal -x test
