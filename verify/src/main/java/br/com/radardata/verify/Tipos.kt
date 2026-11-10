@@ -13,7 +13,7 @@ data class Passo(
 /** O estado da sessao, como o runtime o descreve. */
 data class EstadoSessao(
     val sessionId: String,
-    /** pending, in_progress, completed, expired, canceled. */
+    /** pending, in_progress, completed, failed, expired, canceled. */
     val status: String,
     /** O passo em que a sessao esta, ou nulo quando acabou. */
     val etapaAtual: String?,
@@ -26,8 +26,12 @@ data class EstadoSessao(
     val branding: Map<String, Any?> = emptyMap(),
     val cru: Map<String, Any?> = emptyMap(),
 ) {
-    /** Acabou, de qualquer jeito: nao ha mais o que a pessoa possa fazer. */
-    val terminou: Boolean get() = status in setOf("completed", "expired", "canceled")
+    /**
+     * Acabou, de qualquer jeito: nao ha mais o que a pessoa possa fazer. `failed` e a sessao que
+     * o servidor encerrou sem aprovar (tentativas de prova de vida esgotadas, por exemplo): ela
+     * nunca vira `expired`, e sem ela aqui o app ficaria esperando para sempre.
+     */
+    val terminou: Boolean get() = status in setOf("completed", "failed", "expired", "canceled")
 
     internal companion object {
         @Suppress("UNCHECKED_CAST")
@@ -50,7 +54,10 @@ data class EstadoSessao(
 
 /** Como o fluxo terminou. Sai uma vez so por sessao. */
 sealed interface Desfecho {
-    /** A pessoa terminou. A decisao que vale e a do SEU backend, pelo webhook. */
+    /**
+     * A pessoa terminou: `estado.status` e `completed`, ou `failed` quando o servidor encerrou sem
+     * aprovar (o motivo vem em `estado.motivo`). A decisao que vale e a do SEU backend, pelo webhook.
+     */
     data class Concluido(val estado: EstadoSessao) : Desfecho
 
     /** O seu backend cancelou a sessao pela API. Nao e falha. */

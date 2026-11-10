@@ -54,7 +54,8 @@ class Orquestrador(
     suspend fun provaDeVidaNativa(): EstadoSessao {
         val desafio = runtime.livenessStart()
         provedorNativo.executar(desafio)
-        return runtime.livenessResultado()
+        // O servidor confere que o resultado e do desafio que ele mesmo criou.
+        return runtime.livenessResultado(desafio["session_id"]?.toString().orEmpty())
     }
 
     /**

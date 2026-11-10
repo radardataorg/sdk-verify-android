@@ -71,13 +71,22 @@ class ContratoVerify : ActivityResultContract<SessaoDoVerify, Desfecho>() {
                 ),
             )
             "cancelado" -> Desfecho.Cancelado
-            else -> Desfecho.Erro(
-                ErroVerify(
-                    dados.getString(R_ERRO).orEmpty().ifEmpty { "Falha no Verify." },
-                    dados.getString(R_CODIGO),
-                    dados.getInt(R_HTTP, 0).takeIf { it > 0 },
-                ),
-            )
+            else -> {
+                val mensagem = dados.getString(R_ERRO).orEmpty().ifEmpty { "Falha no Verify." }
+                val codigo = dados.getString(R_CODIGO)
+                val http = dados.getInt(R_HTTP, 0).takeIf { it > 0 }
+                // A classe volta inteira: quem integra decide por `is SessaoInvalida`, como diz o README.
+                Desfecho.Erro(
+                    when (dados.getString(R_CLASSE)) {
+                        "SessaoInvalida" -> SessaoInvalida(mensagem, codigo, http, emptyMap())
+                        "PassoForaDeOrdem" -> PassoForaDeOrdem(mensagem, codigo, http, emptyMap())
+                        "BiometriaIndisponivel" -> BiometriaIndisponivel(mensagem, codigo, http, emptyMap())
+                        "FalhaDeRede" -> FalhaDeRede(mensagem, null)
+                        "SemCamera" -> SemCamera(mensagem)
+                        else -> ErroVerify(mensagem, codigo, http)
+                    },
+                )
+            }
         }
     }
 
@@ -95,6 +104,7 @@ class ContratoVerify : ActivityResultContract<SessaoDoVerify, Desfecho>() {
         const val R_ERRO = "radardata.verify.erro"
         const val R_CODIGO = "radardata.verify.codigo"
         const val R_HTTP = "radardata.verify.http"
+        const val R_CLASSE = "radardata.verify.classe"
 
         fun paraIntent(d: Desfecho): Intent = Intent().apply {
             when (d) {
@@ -111,6 +121,7 @@ class ContratoVerify : ActivityResultContract<SessaoDoVerify, Desfecho>() {
                     putExtra(R_ERRO, d.erro.message)
                     putExtra(R_CODIGO, d.erro.codigo)
                     putExtra(R_HTTP, d.erro.status ?: 0)
+                    putExtra(R_CLASSE, d.erro::class.java.simpleName)
                 }
             }
         }
@@ -127,9 +138,10 @@ class VerifyActivity : ComponentActivity() {
     private val pedirPermissao = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         pedidos.permissaoRespondida(it)
     }
-    private val pedirArquivo = registerForActivityResult(ActivityResultContracts.GetContent()) {
+    private val pedirArquivo = registerForActivityResult(ActivityResultContracts.OpenDocument()) {
         pedidos.arquivoEscolhido(it)
     }
+    private lateinit var controle: ControleDaSessao
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -139,7 +151,7 @@ class VerifyActivity : ComponentActivity() {
 
         pedidos = PedidosComLaunchers(this).also {
             it.lancarPermissao = { p -> pedirPermissao.launch(p) }
-            it.lancarArquivo = { tipo -> pedirArquivo.launch(tipo) }
+            it.lancarArquivo = { tipos -> pedirArquivo.launch(tipos) }
         }
 
         val raiz = FrameLayout(this)
@@ -150,11 +162,15 @@ class VerifyActivity : ComponentActivity() {
             override fun handleOnBackPressed() {
                 // Voltar dentro do fluxo navega a pagina; fora dela, sai sem desfecho.
                 val w = webView
-                if (w != null && w.canGoBack()) w.goBack() else finish()
+                if (w != null && w.canGoBack()) {
+                    w.goBack()
+                } else {
+                    encerrarLocal(Desfecho.Erro(ErroVerify("A pessoa saiu do fluxo antes de terminar.", "saiu_do_fluxo")))
+                }
             }
         })
 
-        val controle = ControleDaSessao(
+        controle = ControleDaSessao(
             sessao = intent.getStringExtra(ContratoVerify.EXTRA_SESSAO).orEmpty(),
             base = intent.getStringExtra(ContratoVerify.EXTRA_BASE),
             provedor = SemProvedorNativo,
@@ -167,7 +183,7 @@ class VerifyActivity : ComponentActivity() {
                 is ControleDaSessao.Abertura.Fim -> encerrar(abertura.desfecho)
                 is ControleDaSessao.Abertura.WebView -> {
                     val w = WebView(this@VerifyActivity)
-                    NavegadorDoVerify.configurar(w, abertura.url, lifecycleScope, pedidos) { encerrar(Desfecho.Erro(it)) }
+                    NavegadorDoVerify.configurar(w, abertura.url, lifecycleScope, pedidos) { encerrarLocal(Desfecho.Erro(it)) }
                     raiz.removeAllViews()
                     raiz.addView(w, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
                     webView = w
@@ -176,6 +192,13 @@ class VerifyActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Desfecho que nasceu no aparelho: o servidor tem a palavra final, se responder em 3 s. */
+    private fun encerrarLocal(local: Desfecho) {
+        if (encerrado) return
+        acompanhamento?.cancel()
+        lifecycleScope.launch { encerrar(controle.confirmar(local)) }
     }
 
     private fun encerrar(d: Desfecho) {

@@ -7,8 +7,12 @@ plugins {
 
 val versaoDoSdk = "0.1.0"
 
+// O JitPack builda pela tag e passa a versao dela em VERSION (v0.1.0): publica com essa, para a
+// coordenada que o cliente escreve resolver. Fora do JitPack, vale a do arquivo.
+val versaoPublicada = System.getenv("VERSION") ?: versaoDoSdk
+
 group = "com.github.radardataorg"
-version = versaoDoSdk
+version = versaoPublicada
 
 android {
     namespace = "br.com.radardata.verify"
@@ -47,8 +51,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.activity:activity-compose:1.10.1")
-    implementation(platform("androidx.compose:compose-bom:2025.06.01"))
-    implementation("androidx.compose.ui:ui")
+    // Modifier e Composable aparecem na assinatura publica: quem usa precisa deles no classpath.
+    api(platform("androidx.compose:compose-bom:2025.06.01"))
+    api("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
 
     testImplementation("junit:junit:4.13.2")
@@ -64,7 +69,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.radardataorg"
                 artifactId = "sdk-verify-android"
-                version = versaoDoSdk
+                version = versaoPublicada
             }
         }
     }

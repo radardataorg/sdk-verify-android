@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -101,10 +102,19 @@ internal object NavegadorDoVerify {
                 params: FileChooserParams,
             ): Boolean {
                 escopo.launch {
-                    val tipos = params.acceptTypes.filter { it.isNotBlank() }.toTypedArray().ifEmpty { arrayOf("*/*") }
+                    // A pagina manda "image/*,application/pdf" num item so: separa em tipos.
+                    val tipos = params.acceptTypes.flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.toTypedArray().ifEmpty { arrayOf("*/*") }
                     callback.onReceiveValue(pedidos.escolherArquivo(tipos)?.toTypedArray())
                 }
                 return true
+            }
+        }
+
+        // Documento para ler (o termo do consentimento, por exemplo) abre fora do app, no visualizador do aparelho.
+        webView.setDownloadListener { url, _, _, _, _ ->
+            val uri = Uri.parse(url)
+            if (uri.scheme == "https") {
+                runCatching { webView.context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         }
 
@@ -119,6 +129,12 @@ internal object NavegadorDoVerify {
                         view.context.startActivity(Intent(Intent.ACTION_VIEW, destino).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
                 }
+                return true
+            }
+
+            // Sem isto, a partir do Android 8 o sistema mata o app do cliente junto com o renderer.
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                aoFalhar(ErroVerify("A página do Verify parou de responder.", "pagina_caiu"))
                 return true
             }
 

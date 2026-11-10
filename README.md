@@ -26,7 +26,8 @@ dependencies {
 }
 ```
 
-Android 7 (API 24) ou mais novo.
+Requisitos do app: Android 7 (API 24) ou mais novo, `compileSdk` 35 ou mais e Kotlin 2.1 ou
+mais (o SDK é compilado com Kotlin 2.2).
 
 ## O app não cria a sessão, e isso é de propósito
 
@@ -53,7 +54,7 @@ import br.com.radardata.verify.SessaoDoVerify
 class CadastroActivity : ComponentActivity() {
     private val verify = registerForActivityResult(ContratoVerify()) { desfecho ->
         when (desfecho) {
-            is Desfecho.Concluido -> mostrarAguarde(desfecho.estado.resultado) // APROVADO, REPROVADO, REVISAO_MANUAL
+            is Desfecho.Concluido -> mostrarAguarde(desfecho.estado.resultado) // status completed ou failed
             Desfecho.Cancelado -> voltarAoInicio()                         // o seu backend cancelou
             is Desfecho.Erro -> pedirSessaoNova(desfecho.erro)              // expirou, sem rede, saiu do fluxo
         }
@@ -111,9 +112,26 @@ Você não precisa fazer nada para a prova de vida.
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 ```
 
-Sem a declaração, o SDK nega a localização e o fluxo segue sem ela, em vez de travar.
+Sem a declaração, o SDK nega a localização. Se a localização do fluxo é opcional, ele segue
+sem ela; **se é obrigatória, a pessoa não passa do consentimento**, então declare. Para a Play
+Store não exigir GPS do aparelho, declare também:
+
+```xml
+<uses-feature android:name="android.hardware.location" android:required="false" />
+```
 
 O "enviar um arquivo" do passo de documento abre o seletor de arquivos do Android.
+
+## Desfechos
+
+- `Desfecho.Concluido`: a pessoa terminou. `estado.status` é `completed`, ou `failed` quando o
+  servidor encerrou sem aprovar (tentativas esgotadas, por exemplo), com o motivo em
+  `estado.motivo`. Pela Activity, o estado vem sem `passos`, `branding` e `cru`.
+- `Desfecho.Cancelado`: o seu backend cancelou a sessão pela API.
+- `Desfecho.Erro`: não deu para seguir (tabela abaixo).
+
+Voltar, página que não carregou ou WebView que caiu: antes de entregar o erro, o SDK pergunta ao
+servidor por até 3 s. Se a pessoa já tinha terminado, chega o `Concluido`.
 
 ## Como o SDK sabe que terminou
 
@@ -134,6 +152,8 @@ nada: a próxima tenta de novo.
 | `FalhaDeRede` | sem resposta | conferir a rede e abrir de novo |
 | `ErroVerify` com código `saiu_do_fluxo` | a pessoa voltou pelo botão do Android | abrir de novo a mesma url |
 | `ErroVerify` com código `pagina_nao_carregou` | a página do fluxo não abriu | abrir de novo |
+| `ErroVerify` com código `pagina_caiu` | o WebView parou (falta de memória no aparelho) | abrir de novo |
+| `ErroVerify` com código `url_invalida` | a url não é de uma sessão do Verify | conferir o que o backend devolveu |
 
 ## O que é nativo hoje
 

@@ -1,6 +1,7 @@
 package br.com.radardata.verify
 
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * O andamento de uma sessao, igual para a Activity e para o Compose: abre, decide entre nativo
@@ -73,7 +74,20 @@ internal class ControleDaSessao(
         }
     }
 
+    /**
+     * Antes de entregar um desfecho que nasceu no aparelho (voltar, pagina que nao carregou,
+     * WebView que caiu), pergunta ao servidor: a pessoa pode ter terminado segundos antes, e
+     * mandar o app refazer a biometria de uma sessao concluida e pior do que esperar 3 s.
+     */
+    suspend fun confirmar(local: Desfecho): Desfecho {
+        val o = orquestrador.getOrElse { return local }
+        return withTimeoutOrNull(CONFIRMACAO_MS) { o.conferir().desfecho } ?: local
+    }
+
     companion object {
+        /** Quanto esperar o servidor antes de entregar um desfecho local. */
+        const val CONFIRMACAO_MS = 3_000L
+
         /** Cinco segundos: a pessoa ja ve o resultado na propria pagina enquanto o app nao fica sabendo. */
         const val INTERVALO_PADRAO_MS = 5_000L
 

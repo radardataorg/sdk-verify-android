@@ -16,7 +16,7 @@ import kotlinx.coroutines.sync.withLock
  */
 internal class PedidosComLaunchers(private val contexto: Context) : PedidosDoAparelho {
     var lancarPermissao: ((String) -> Unit)? = null
-    var lancarArquivo: ((String) -> Unit)? = null
+    var lancarArquivo: ((Array<String>) -> Unit)? = null
 
     private val fila = Mutex()
     private var esperaPermissao: CompletableDeferred<Boolean>? = null
@@ -47,8 +47,8 @@ internal class PedidosComLaunchers(private val contexto: Context) : PedidosDoApa
         val lancar = lancarArquivo ?: return null
         return fila.withLock {
             val espera = CompletableDeferred<Uri?>().also { esperaArquivo = it }
-            // O seletor do Android aceita um tipo; a pagina pede imagem, e PDF quando o fluxo aceita.
-            lancar(if (tipos.size == 1) tipos[0] else "*/*")
+            // So os tipos que a pagina aceita: imagem, e PDF quando o fluxo aceita.
+            lancar(tipos)
             espera.await()?.let { listOf(it) }
         }
     }

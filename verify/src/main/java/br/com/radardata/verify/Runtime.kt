@@ -76,7 +76,8 @@ class Runtime(
      * Fecha a prova de vida: o SERVIDOR busca o resultado e avalia. O app nao decide nada:
      * quem decide aprovacao de biometria no aparelho do usuario final e o proprio usuario.
      */
-    suspend fun livenessResultado(): EstadoSessao = EstadoSessao.de(pedir("POST", "liveness/result"))
+    suspend fun livenessResultado(sessionId: String): EstadoSessao =
+        EstadoSessao.de(pedir("POST", "liveness/result", mapOf("session_id" to sessionId)))
 
     private suspend fun pedir(metodo: String, caminho: String, corpo: Map<String, Any?>? = null): Map<String, Any?> =
         withContext(Dispatchers.IO) {

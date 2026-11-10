@@ -12,12 +12,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.launch
 
 /**
  * O RadarData Verify dentro da sua tela Compose.
@@ -58,12 +60,13 @@ fun VerifyRadarData(
 
     val pedidos = remember(contexto) { PedidosComLaunchers(contexto) }
     val pedirPermissao = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { pedidos.permissaoRespondida(it) }
-    val pedirArquivo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { pedidos.arquivoEscolhido(it) }
+    val pedirArquivo = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { pedidos.arquivoEscolhido(it) }
     pedidos.lancarPermissao = { pedirPermissao.launch(it) }
     pedidos.lancarArquivo = { pedirArquivo.launch(it) }
 
-    // O desfecho sai uma vez por sessao; trocar `base` com a mesma sessao reabre sem repetir.
-    val encerrado = remember(sessao) { mutableStateOf(false) }
+    // O desfecho sai uma vez por sessao, e sobrevive a rotacao: sem isso, girar a tela depois do
+    // fim reabria a sessao, o servidor dizia "concluida" de novo e o app recebia dois desfechos.
+    val encerrado = rememberSaveable(sessao) { mutableStateOf(false) }
     val encerrar: (Desfecho) -> Unit = { d ->
         if (!encerrado.value) {
             encerrado.value = true
@@ -89,13 +92,15 @@ fun VerifyRadarData(
     }
 
     LaunchedEffect(controle) {
+        if (encerrado.value) return@LaunchedEffect
         when (val abertura = controle.abrir { aoEstado?.invoke(it) }) {
             is ControleDaSessao.Abertura.Fim -> encerrar(abertura.desfecho)
             is ControleDaSessao.Abertura.WebView -> url = abertura.url
         }
     }
 
-    LaunchedEffect(controle, url) {
+    // `encerrado` na chave: ao encerrar por outro caminho, a conferencia para.
+    LaunchedEffect(controle, url, encerrado.value) {
         if (url == null || encerrado.value) return@LaunchedEffect
         encerrar(controle.acompanhar { aoEstado?.invoke(it) })
     }
@@ -110,7 +115,9 @@ fun VerifyRadarData(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).also { w ->
-                        NavegadorDoVerify.configurar(w, atual, escopo, pedidos) { encerrar(Desfecho.Erro(it)) }
+                        NavegadorDoVerify.configurar(w, atual, escopo, pedidos) { erro ->
+                            escopo.launch { encerrar(controle.confirmar(Desfecho.Erro(erro))) }
+                        }
                         w.loadUrl(atual)
                         criado = w
                     }

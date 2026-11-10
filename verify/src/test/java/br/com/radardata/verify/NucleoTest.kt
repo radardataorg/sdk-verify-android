@@ -146,4 +146,46 @@ class NucleoTest {
         val vazia = ControleDaSessao("  ", null, SemProvedorNativo, 5_000, transporte = Falso(listOf(estado("in_progress"))))
         assertTrue((vazia.abrir {} as ControleDaSessao.Abertura.Fim).desfecho is Desfecho.Erro)
     }
+
+    /** Regressao: sessao que o servidor encerrou sem aprovar termina, em vez de conferir para sempre. */
+    @Test
+    fun `sessao failed termina com o motivo`() = runTest {
+        val f = Falso(listOf(json(200, """{"session_id":"s1","status":"failed","etapa_atual":null,"outcome":"REPROVADO","motivo":"Tentativas esgotadas","steps":[]}""")))
+        val d = ControleDaSessao("abc", null, SemProvedorNativo, 2_000, transporte = f).abrir {} as ControleDaSessao.Abertura.Fim
+
+        val estado = (d.desfecho as Desfecho.Concluido).estado
+        assertEquals("failed", estado.status)
+        assertEquals("Tentativas esgotadas", estado.motivo)
+    }
+
+    /** O servidor so aceita o resultado do desafio que ele criou: o session_id volta junto. */
+    @Test
+    fun `prova de vida nativa devolve o session_id do desafio`() = runTest {
+        val corpos = mutableListOf<String?>()
+        val t = Transporte { _, url, corpo, _ ->
+            corpos += corpo
+            when {
+                url.endsWith("/liveness/start") -> RespostaHttp(200, """{"session_id":"liv-9"}""")
+                else -> RespostaHttp(200, """{"session_id":"s1","status":"in_progress","etapa_atual":"consent","steps":[]}""")
+            }
+        }
+        Orquestrador(Runtime("t", transporte = t), object : ProvedorDeProvaDeVida {
+            override suspend fun disponivel() = true
+            override suspend fun executar(desafio: Map<String, Any?>) = Unit
+        }).provaDeVidaNativa()
+
+        assertTrue(corpos.last()!!.contains("\"session_id\":\"liv-9\""))
+    }
+
+    /** Desfecho que nasceu no aparelho cede ao servidor: quem ja concluiu nao refaz a biometria. */
+    @Test
+    // Tempo real: no tempo virtual do runTest, o limite de 3 s estoura antes da chamada voltar.
+    fun `desfecho local cede ao servidor`() = kotlinx.coroutines.runBlocking {
+        val local = Desfecho.Erro(ErroVerify("saiu", "saiu_do_fluxo"))
+        val concluida = ControleDaSessao("abc", null, SemProvedorNativo, 2_000, transporte = Falso(listOf(estado("completed", null, "APROVADO"))))
+        assertTrue(concluida.confirmar(local) is Desfecho.Concluido)
+
+        val aberta = ControleDaSessao("abc", null, SemProvedorNativo, 2_000, transporte = Falso(listOf(estado("in_progress"))))
+        assertEquals(local, aberta.confirmar(local))
+    }
 }
