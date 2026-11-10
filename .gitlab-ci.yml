@@ -18,7 +18,8 @@ teste:
     - apt-get update -qq && apt-get install -y -qq unzip wget >/dev/null
     - wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O /tmp/ferramentas.zip
     - mkdir -p $ANDROID_HOME/cmdline-tools && unzip -q /tmp/ferramentas.zip -d $ANDROID_HOME/cmdline-tools && mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
-    - yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
+    # `yes` morre de SIGPIPE (141) quando o sdkmanager fecha a entrada; isso nao e falha.
+    - (yes || true) | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
     - $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.0.0" >/dev/null
   script:
     # A versao do Gradle tem de concordar com a tag: o JitPack publica o que o build diz.
